@@ -1,0 +1,449 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>JEE CBT Simulator</title>
+
+  <style>
+    body { margin:0; font-family:Arial; background:#f1f3f6; }
+
+    .header {
+      display:flex;
+      justify-content:space-between;
+      align-items:center;
+      background:#2c3e50;
+      color:white;
+      padding:10px 20px;
+    }
+
+    .container { display:flex; height:calc(100vh - 60px); }
+
+    .sidebar {
+      width:18%;
+      background:#1e2a36;
+      color:white;
+      padding:10px;
+      overflow:auto;
+    }
+
+    .paper-btn {
+      width:100%;
+      padding:10px;
+      margin:5px 0;
+      border:none;
+      cursor:pointer;
+      background:#34495e;
+      color:white;
+      border-radius:5px;
+      text-align:left;
+    }
+
+    .active-paper { background:#16a085 !important; }
+
+    .left { width:52%; background:white; }
+    iframe { width:100%; height:100%; border:none; }
+
+    .right {
+      width:30%;
+      background:#f8f9fa;
+      padding:15px;
+      overflow:auto;
+      display:flex;
+      flex-direction:column;
+    }
+
+    .q-header { font-weight:bold; margin-bottom:10px; }
+
+    .question-box {
+      background:white;
+      padding:15px;
+      border-radius:8px;
+      box-shadow:0 2px 6px rgba(0,0,0,0.1);
+      margin-bottom:15px;
+    }
+
+    .options button {
+      display:flex;
+      align-items:center;
+      width:100%;
+      margin:8px 0;
+      padding:12px;
+      border:1px solid #ccc;
+      border-radius:6px;
+      cursor:pointer;
+      background:white;
+    }
+
+    .options button span {
+      width:30px;
+      height:30px;
+      border-radius:50%;
+      border:2px solid #3498db;
+      margin-right:10px;
+      text-align:center;
+      line-height:26px;
+      font-weight:bold;
+    }
+
+    .selected { background:#3498db !important; color:white; }
+    .selected span { background:white; color:#3498db; }
+
+    .integer-box {
+      background:white;
+      padding:15px;
+      border-radius:8px;
+      box-shadow:0 2px 6px rgba(0,0,0,0.1);
+    }
+
+    input { width:100%; padding:12px; font-size:16px; }
+
+    .controls {
+      position:fixed;
+      bottom:0;
+      width:82%;
+      left:18%;
+      background:white;
+      padding:10px;
+      border-top:2px solid #ccc;
+    }
+
+    .palette {
+      margin-top:10px;
+      padding-top:10px;
+      border-top:2px solid #ddd;
+    }
+
+    .palette button {
+      width:40px;
+      height:40px;
+      margin:5px;
+      border:none;
+      cursor:pointer;
+    }
+
+    .answered { background:#2ecc71; color:white; }
+    .not-visited { background:#ecf0f1; }
+    .marked { background:#9b59b6; color:white; }
+    .current { outline:3px solid black; }
+  </style>
+</head>
+
+<body>
+
+<div class="header">
+  <div>JEE CBT Simulator</div>
+  <div id="timer">180:00</div>
+</div>
+
+<div class="container">
+
+  <div class="sidebar" id="paperList"></div>
+
+  <div class="left">
+    <iframe id="pdf"></iframe>
+  </div>
+
+  <div class="right">
+    <div class="q-header" id="qHeader"></div>
+    <div id="options"></div>
+    <div class="palette" id="palette"></div>
+  </div>
+
+</div>
+
+<div class="controls">
+  <button onclick="prev()">Prev</button>
+  <button onclick="mark()">Mark</button>
+  <button onclick="next()">Next</button>
+  <button onclick="submitTest()">Submit</button>
+</div>
+
+<script>
+
+/* ================= STATE ================= */
+let DATA;
+let index = 0;
+let currentSection;
+
+let selected = {};
+let marked = {};
+
+let time = 180 * 60;
+
+/* ================= SUBJECT ORDER ================= */
+const SUBJECT_ORDER = ["Mathematics","Physics","Chemistry"];
+
+function getSubject(qid){
+  qid = Number(qid);
+  if(qid >= 1 && qid <= 25) return "Mathematics";
+  if(qid >= 26 && qid <= 50) return "Physics";
+  if(qid >= 51 && qid <= 75) return "Chemistry";
+}
+
+/* ================= PAPERS ================= */
+const PAPERS = [
+  {
+    name: "22 Jan 2025 S1",
+    json: "data/22jan_s1_2025.json",
+    pdf: "pdf/22jan_s1_2025.pdf"
+  }
+];
+
+buildPaperList();
+loadPaper(0);
+
+/* ================= PAPER LIST ================= */
+function buildPaperList(){
+  document.getElementById("paperList").innerHTML =
+    PAPERS.map((p,i)=>`
+      <button class="paper-btn ${i===0?'active-paper':''}"
+      onclick="loadPaper(${i})"
+      id="paper-${i}">
+        ${p.name}
+      </button>
+    `).join("");
+}
+
+/* ================= LOAD PAPER ================= */
+function loadPaper(i){
+
+  document.querySelectorAll(".paper-btn")
+    .forEach(b => b.classList.remove("active-paper"));
+
+  document.getElementById("paper-"+i)
+    .classList.add("active-paper");
+
+  fetch(PAPERS[i].json + "?v=" + Date.now())
+  .then(r => r.json())
+  .then(d => {
+
+    DATA = d;
+
+    selected = {};
+    marked = {};
+    index = 0;
+
+    time = 180 * 60;
+
+    document.getElementById("pdf").src =
+      PAPERS[i].pdf + "?v=" + Date.now();
+
+    buildSections();
+    switchSection(Object.keys(DATA.sections)[0]);
+
+  });
+}
+
+/* ================= SECTIONS ================= */
+function buildSections(){
+  let secDiv = document.getElementById("sections");
+
+  if(!secDiv){
+    secDiv = document.createElement("div");
+    secDiv.id = "sections";
+    secDiv.className = "sections";
+    document.querySelector(".header").appendChild(secDiv);
+  }
+
+  secDiv.innerHTML =
+    Object.keys(DATA.sections).map(sec=>`
+      <button onclick="switchSection('${sec}')" id="btn-${sec}">
+        ${sec}
+      </button>
+    `).join("");
+}
+
+function switchSection(sec){
+  currentSection = sec;
+  index = 0;
+  loadQ();
+}
+
+/* ================= QUESTION ================= */
+function loadQ(){
+
+  let q = DATA.sections[currentSection][index];
+  let qid = q.id;
+
+  document.getElementById("qHeader").innerText =
+    `Question ${index+1} (${currentSection})`;
+
+  let html = "";
+
+  if(q.type === "integer"){
+    html = `
+      <div class="integer-box">
+        <input type="number"
+        value="${selected[qid] ?? ''}"
+        oninput="selected['${qid}']=this.value">
+      </div>
+    `;
+  }
+  else {
+    html = `
+      <div class="question-box">
+        <div class="options">
+          ${["A","B","C","D"].map(l=>`
+            <button class="${selected[qid]==l?'selected':''}"
+            onclick="selected['${qid}']='${l}';loadQ();">
+              <span>${l}</span> Option ${l}
+            </button>
+          `).join("")}
+        </div>
+      </div>
+    `;
+  }
+
+  document.getElementById("options").innerHTML = html;
+  updatePalette();
+}
+
+/* ================= NAV ================= */
+function next(){
+  if(index < DATA.sections[currentSection].length-1) index++;
+  loadQ();
+}
+
+function prev(){
+  if(index > 0) index--;
+  loadQ();
+}
+
+function mark(){
+  let q = DATA.sections[currentSection][index];
+  marked[q.id] = !marked[q.id];
+  updatePalette();
+}
+
+function jump(i){
+  index = i;
+  loadQ();
+}
+
+/* ================= PALETTE ================= */
+function updatePalette(){
+
+  let grouped = {
+    Mathematics: [],
+    Physics: [],
+    Chemistry: []
+  };
+
+  DATA.sections[currentSection].forEach((q,i)=>{
+    let sub = getSubject(q.id);
+    grouped[sub].push({q,i});
+  });
+
+  let html = "";
+
+  SUBJECT_ORDER.forEach(sub=>{
+    html += `<div style="margin-top:10px;font-weight:bold">${sub}</div>`;
+
+    html += grouped[sub].map(obj=>`
+      <button onclick="jump(${obj.i})"
+      class="${
+        marked[obj.q.id] ? 'marked' :
+        selected[obj.q.id] != null ? 'answered' :
+        'not-visited'
+      } ${obj.i===index?'current':''}">
+        ${obj.i+1}
+      </button>
+    `).join("");
+  });
+
+  document.getElementById("palette").innerHTML = html;
+}
+
+/* ================= TIMER ================= */
+setInterval(()=>{
+  let m = Math.floor(time/60);
+  let s = time%60;
+  document.getElementById("timer").innerText =
+    `${m}:${s.toString().padStart(2,'0')}`;
+  time--;
+  if(time<=0) submitTest();
+},1000);
+
+/* ================= SUBMIT + NEW DASHBOARD UI ================= */
+function submitTest(){
+
+  let score = 0;
+
+  let stats = {
+    Mathematics:{c:0,t:0},
+    Physics:{c:0,t:0},
+    Chemistry:{c:0,t:0}
+  };
+
+  Object.keys(DATA.sections).forEach(sec=>{
+    DATA.sections[sec].forEach(q=>{
+
+      let user = selected[q.id];
+      let ans = DATA.answers[String(q.id)];
+      let sub = getSubject(q.id);
+
+      stats[sub].t++;
+
+      if(user === ans){
+        score += 4;
+        stats[sub].c++;
+      }
+      else if(user){
+        score -= 1;
+      }
+
+    });
+  });
+
+  let html = `
+  <div style="
+    padding:25px;
+    font-family:Arial;
+    background:linear-gradient(135deg,#1e2a36,#2c3e50);
+    min-height:100vh;
+    color:white;
+  ">
+
+    <div style="text-align:center;margin-bottom:20px">
+      <h1>Performance Dashboard</h1>
+    </div>
+
+    <div style="text-align:center;margin:20px 0">
+      <div style="
+        display:inline-block;
+        background:white;
+        color:#2c3e50;
+        padding:20px 40px;
+        border-radius:15px;
+      ">
+        <div>TOTAL SCORE</div>
+        <div style="font-size:40px;font-weight:bold">${score}</div>
+      </div>
+    </div>
+
+    <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:15px">
+  `;
+
+  SUBJECT_ORDER.forEach(sub=>{
+    let s = stats[sub];
+    let acc = s.t ? (s.c/s.t)*100 : 0;
+
+    html += `
+      <div style="background:white;color:#2c3e50;padding:15px;border-radius:10px">
+        <h3>${sub}</h3>
+        <div style="height:10px;background:#ddd;border-radius:10px;overflow:hidden">
+          <div style="height:10px;background:#3498db;width:${acc}%"></div>
+        </div>
+        <p>${acc.toFixed(2)}%</p>
+      </div>
+    `;
+  });
+
+  html += `</div></div>`;
+
+  document.body.innerHTML = html;
+}
+
+</script>
+
+</body>
+</html>

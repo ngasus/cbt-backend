@@ -1,0 +1,4 @@
+onlystudyolympus_db_user - username
+sNoxgTnhdf0e1pmK - psswrd
+
+mongodb://onlystudyolympus_db_user:sNoxgTnhdf0e1pmK@ac-2kksyd5-shard-00-00.z29agbw.mongodb.net:27017,ac-2kksyd5-shard-00-01.z29agbw.mongodb.net:27017,ac-2kksyd5-shard-00-02.z29agbw.mongodb.net:27017/?ssl=true&replicaSet=atlas-hudmdx-shard-0&authSource=admin&appName=ClusterCBT - connection string

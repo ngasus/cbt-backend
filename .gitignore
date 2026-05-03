@@ -1,0 +1,18 @@
+# Dependencies
+node_modules/
+
+# Environment variables (VERY IMPORTANT - never push this)
+.env
+
+# Logs
+logs/
+*.log
+npm-debug.log*
+
+# OS junk files
+.DS_Store
+Thumbs.db
+
+# Optional (if you ever add these later)
+dist/
+build/
