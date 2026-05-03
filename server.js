@@ -9,15 +9,29 @@ const cloudinary = require("cloudinary").v2;
 const { CloudinaryStorage } = require("multer-storage-cloudinary");
 const multer = require("multer");
 
+const path = require("path");
+
 const app = express();
 const server = http.createServer(app);
 
-app.use(cors());
-app.use(express.json());
+/* ================= MIDDLEWARE ================= */
 
-/* ================= FRONTEND (optional hosting) ================= */
-const path = require("path");
+app.use(cors({
+  origin: "*",
+  methods: ["GET", "POST", "PUT", "DELETE"],
+  credentials: true
+}));
+
+app.use(express.json({ limit: "10mb" }));
+
+/* ================= FRONTEND ================= */
+
 app.use(express.static(path.join(__dirname, "public")));
+
+/* 🔥 ROOT FIX (IMPORTANT FOR RENDER) */
+app.get("/", (req, res) => {
+  res.sendFile(path.join(__dirname, "public", "index.html"));
+});
 
 /* ================= MONGODB ================= */
 
@@ -77,7 +91,7 @@ const Attempt = mongoose.model("Attempt", {
 
 /* ================= ROUTES ================= */
 
-/* 📤 UPLOAD PAPER (PDF via Cloudinary) */
+/* 📤 UPLOAD PAPER */
 app.post("/upload-paper", upload.single("pdf"), async (req, res) => {
   try {
     const { id, name, sections, answers, total_questions } = req.body;
@@ -102,95 +116,127 @@ app.post("/upload-paper", upload.single("pdf"), async (req, res) => {
 
 /* 📥 GET ALL PAPERS */
 app.get("/papers", async (req, res) => {
-  const papers = await Paper.find({}, { answers: 0 });
-  res.json(papers);
+  try {
+    const papers = await Paper.find({}, { answers: 0 });
+    res.json(papers);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
 });
 
 /* 📄 GET SINGLE PAPER */
 app.get("/paper/:id", async (req, res) => {
-  const paper = await Paper.findOne({ id: req.params.id });
-  res.json(paper);
+  try {
+    const paper = await Paper.findOne({ id: req.params.id });
+
+    if (!paper) {
+      return res.status(404).json({ error: "Paper not found" });
+    }
+
+    res.json(paper);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
 });
 
 /* 👤 REGISTER USER */
 app.post("/register", async (req, res) => {
-  const { username, email } = req.body;
+  try {
+    const { username, email } = req.body;
 
-  const user = await User.create({
-    username,
-    email
-  });
+    const user = await User.create({
+      username,
+      email
+    });
 
-  res.json(user);
+    res.json(user);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
 });
 
 /* 📊 SUBMIT TEST */
 app.post("/submit", async (req, res) => {
+  try {
+    const { userId, paperId, responses } = req.body;
 
-  const { userId, paperId, responses } = req.body;
+    const paper = await Paper.findOne({ id: paperId });
 
-  const paper = await Paper.findOne({ id: paperId });
+    let score = 0;
+    let correct = 0;
+    let wrong = 0;
+    let unattempted = 0;
 
-  let score = 0;
-  let correct = 0;
-  let wrong = 0;
-  let unattempted = 0;
+    Object.keys(paper.answers).forEach(qid => {
+      const user = responses[qid];
+      const ans = paper.answers[qid];
 
-  Object.keys(paper.answers).forEach(qid => {
+      if (user == null) {
+        unattempted++;
+      }
+      else if (user === ans) {
+        score += 4;
+        correct++;
+      }
+      else {
+        score -= 1;
+        wrong++;
+      }
+    });
 
-    const user = responses[qid];
-    const ans = paper.answers[qid];
+    const accuracy = (correct / paper.total_questions) * 100;
 
-    if (user == null) {
-      unattempted++;
-    }
-    else if (user === ans) {
-      score += 4;
-      correct++;
-    }
-    else {
-      score -= 1;
-      wrong++;
-    }
-  });
+    const attempt = await Attempt.create({
+      userId,
+      paperId,
+      score,
+      accuracy,
+      correct,
+      wrong,
+      unattempted,
+      responses
+    });
 
-  const accuracy = (correct / paper.total_questions) * 100;
+    res.json({
+      score,
+      accuracy,
+      attemptId: attempt._id
+    });
 
-  const attempt = await Attempt.create({
-    userId,
-    paperId,
-    score,
-    accuracy,
-    correct,
-    wrong,
-    unattempted,
-    responses
-  });
-
-  res.json({
-    score,
-    accuracy,
-    attemptId: attempt._id
-  });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
 });
 
 /* 🏆 LEADERBOARD */
 app.get("/leaderboard/:paperId", async (req, res) => {
+  try {
+    const data = await Attempt.find({ paperId: req.params.paperId })
+      .sort({ score: -1 })
+      .limit(100);
 
-  const data = await Attempt.find({ paperId: req.params.paperId })
-    .sort({ score: -1 })
-    .limit(100);
-
-  res.json(data);
+    res.json(data);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
 });
 
 /* 📊 USER HISTORY */
 app.get("/attempts/:userId", async (req, res) => {
+  try {
+    const attempts = await Attempt.find({ userId: req.params.userId })
+      .sort({ createdAt: -1 });
 
-  const attempts = await Attempt.find({ userId: req.params.userId })
-    .sort({ createdAt: -1 });
+    res.json(attempts);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
 
-  res.json(attempts);
+/* ================= HEALTH CHECK ================= */
+
+app.get("/health", (req, res) => {
+  res.json({ status: "CBT Server Running 🚀" });
 });
 
 /* ================= SERVER ================= */
